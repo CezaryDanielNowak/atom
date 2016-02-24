@@ -8,13 +8,10 @@
 	'use strict';
 
 	var
-		atom,
 		VERSION = '0.5.6',
 
 		ObjProto = Object.prototype,
 		hasOwn = ObjProto.hasOwnProperty,
-
-		typeObj = 'object',
 		typeUndef = 'undefined',
 
 		root = typeof window !== typeUndef ? window : global
@@ -27,7 +24,10 @@
 		return ObjProto.toString.call(obj) === '[object Array]';
 	};
 	function inArray(arr, value) {
-		return arr.indexOf(value) !== -1;
+		return arr.indexOf(value) > -1;
+	}
+	function isObject(input) {
+		return input && typeof input === 'object';
 	}
 	function toArray(obj) {
 		return isArray(obj) ? obj : [obj];
@@ -44,9 +44,16 @@
 
 	// Property getter
 	function get(nucleus, keyOrList, func) {
-		var isList = isArray(keyOrList), keys = isList ? keyOrList : [keyOrList],
-			key, values = [], props = nucleus.props, missing = {},
+		var isList = isArray(keyOrList),
+			keys = isList ? keyOrList : [keyOrList],
+			key,
+			values = [],
+			props = nucleus.props,
+			missing = {},
 			result = { values: values };
+		if (keyOrList === undef) {
+			return nucleus;
+		}
 		for (var i = keys.length; --i >= 0;) {
 			key = keys[i];
 			if (!hasOwn.call(props, key)) {
@@ -79,7 +86,7 @@
 			listenersCopy = [].concat(listeners), i = listenersCopy.length,
 			props = nucleus.props, oldValue = props[key],
 			had = hasOwn.call(props, key),
-			isObj = value && typeof value === typeObj;
+			isObj = isObject(value);
 		props[key] = value;
 		if (!had || oldValue !== value || (isObj && !inArray(objStack, value))) {
 			if (isObj) {
@@ -146,8 +153,13 @@
 
 
 	// Return an instance.
-	atom = function () {
+	function atom() {
+		if (this instanceof atom) {
+			throw new Error("Don't use atom with a `new` keyword please.");
+		}
+
 		var
+			config = this || {},
 			args = slice.call(arguments, 0),
 			nucleus = {},
 			props = nucleus.props = {},
@@ -222,7 +234,7 @@
 			entangle: function (otherAtom, keyOrListOrMap) {
 				var
 					isList = isArray(keyOrListOrMap),
-					isMap = !isList && typeof keyOrListOrMap === typeObj,
+					isMap = !isList && isObject(keyOrListOrMap),
 					i, key,
 					keys = isList ? keyOrListOrMap : isMap ? [] : [keyOrListOrMap],
 					map = isMap ? keyOrListOrMap : {}
@@ -273,13 +285,7 @@
 
 			// Return a list of all keys.
 			keys: function () {
-				var keys = [];
-				for (var key in props) {
-					if (hasOwn.call(props, key)) {
-						keys.push(key);
-					}
-				}
-				return keys;
+				return Object.keys(props);
 			},
 
 			// Add arbitrary properties to this atom's interface.
@@ -389,7 +395,7 @@
 			// Set value for a key, or if `keyOrMap` is an object then set all the
 			// keys' corresponding values.
 			set: function (keyOrMap, value) {
-				if (typeof keyOrMap === typeObj) {
+				if (isObject(keyOrMap)) {
 					for (var key in keyOrMap) {
 						if (hasOwn.call(keyOrMap, key)) {
 							set(nucleus, key, keyOrMap[key]);
@@ -409,7 +415,11 @@
 		}
 
 		return me;
-	};
+	}
+
+	atom.setup = function(config) {
+		return atom.bind(config);
+	}
 
 	atom.VERSION = VERSION;
 
