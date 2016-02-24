@@ -9,7 +9,6 @@
 
 	var
 		atom,
-		name = 'atom',
 		VERSION = '0.5.6',
 
 		ObjProto = Object.prototype,
@@ -18,9 +17,7 @@
 		typeObj = 'object',
 		typeUndef = 'undefined',
 
-		root = typeof window !== typeUndef ? window : global,
-		had = hasOwn.call(root, name),
-		prev = root[name]
+		root = typeof window !== typeUndef ? window : global
 	;
 
 
@@ -30,11 +27,7 @@
 		return ObjProto.toString.call(obj) === '[object Array]';
 	};
 	function inArray(arr, value) {
-		for (var i = arr.length; --i >= 0;) {
-			if (arr[i] === value) {
-				return true;
-			}
-		}
+		return arr.indexOf(value) !== -1;
 	}
 	function toArray(obj) {
 		return isArray(obj) ? obj : [obj];
@@ -153,7 +146,7 @@
 
 
 	// Return an instance.
-	atom = root[name] = function () {
+	atom = function () {
 		var
 			args = slice.call(arguments, 0),
 			nucleus = {},
@@ -420,23 +413,9 @@
 
 	atom.VERSION = VERSION;
 
-	// For backwards compatibility with < 0.4.0
-	atom.create = atom;
-
-	atom.noConflict = function () {
-		if (root[name] === atom) {
-			root[name] = had ? prev : undef;
-			if (!had) {
-				try {
-					delete root[name];
-				} catch (ex) {
-				}
-			}
-		}
-		return atom;
-	};
-
 	if (typeof module !== typeUndef && module.exports) {
 		module.exports = atom;
+	} else {
+		root.atom = atom;
 	}
 }());
