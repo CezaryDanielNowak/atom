@@ -12,7 +12,7 @@
 
 		ObjProto = Object.prototype,
 		hasOwn = ObjProto.hasOwnProperty,
-		typeUndef = 'undefined',
+		typeUndef = '' + undef,
 
 		root = typeof window !== typeUndef ? window : global
 	;
@@ -40,28 +40,34 @@
 		}
 		return true;
 	}
+	function clear() {
+		Array.prototype.forEach.call(arguments, function(clearMe) {
+			Object.keys(clearMe).forEach(function(key) {
+				delete clearMe[key];
+			});
+		});
+	}
+	var values = Object.values || function(obj) {
+		return Object.keys(obj).map(function(k) {
+			return obj[k];
+		})
+	}
 
 
 	// Property getter
 	function get(nucleus, keyOrList, func) {
-		var isList = isArray(keyOrList),
-			keys = isList ? keyOrList : [keyOrList],
-			key,
+		var keys = isArray(keyOrList) ? keyOrList : [keyOrList],
 			values = [],
 			props = nucleus.props,
 			missing = {},
 			result = { values: values };
-		if (keyOrList === undef) {
-			return nucleus;
-		}
-		for (var i = keys.length; --i >= 0;) {
-			key = keys[i];
+		keys.forEach(function(key) {
 			if (!hasOwn.call(props, key)) {
 				result.missing = missing;
 				missing[key] = true;
 			}
 			values.unshift(props[key]);
-		}
+		});
 		return func ? func.apply({}, values) : result;
 	}
 
@@ -82,24 +88,24 @@
 
 	// Property setter
 	function set(config, nucleus, key, value) {
-		var keys,
-			listener,
-			listeners = nucleus.listeners,
-			missing,
-			listenersCopy = [].concat(listeners),
-			i = listenersCopy.length,
-			props = nucleus.props,
-			oldValue = props[key],
-			had = hasOwn.call(props, key),
-			isObj = isObject(value);
-		
 		function performSet() {
+			var keys,
+				listener,
+				listeners = nucleus.listeners,
+				missing,
+				listenersCopy = [].concat(listeners),
+				i = listenersCopy.length,
+				props = nucleus.props,
+				oldValue = props[key],
+				had = hasOwn.call(props, key),
+				isObj = isObject(value);
+
 			props[key] = value;
 			if (!had || oldValue !== value || (isObj && !inArray(objStack, value))) {
 				if (isObj) {
 					objStack.push(value);
 				}
-				while (--i >= 0) {
+				while (i--) {
 					listener = listenersCopy[i];
 					keys = listener.keys;
 					missing = listener.missing;
@@ -122,6 +128,10 @@
 				delete nucleus.needs[key];
 				if (isObj) {
 					objStack.pop();
+				}
+
+				if (config.onChange) {
+					config.onChange();
 				}
 			}
 		}
@@ -146,11 +156,11 @@
 				throw new Error('ERROR: Wrong data type returned by ' + validationKey + 'validator. Expected Boolean or Promise.');
 			});
 			if (promises.length) {
-				return Promise.all(Object.values(promises)).then(performSet);
+				return Promise.all(values(promises)).then(performSet);
 			} else {
 				return new Promise(function(resolve, reject) {
 					if (validationError) {
-						reject(validationError)
+						reject(validationError);
 					} else {
 						performSet();
 						resolve();
@@ -246,15 +256,9 @@
 			// Remove references to all properties and listeners.  This releases
 			// memory, and effective stops the atom from working.
 			destroy: function () {
-				delete nucleus.props;
-				delete nucleus.needs;
-				delete nucleus.providers;
-				delete nucleus.listeners;
-				while (q.length) {
-					q.pop();
-				}
-				nucleus = props = needs = providers = listeners =
-					q = q.pending = q.next = q.args = 0;
+				clear(nucleus, config, q);
+				q.length = 0;
+				nucleus = props = needs = providers = listeners = q = 0;
 			},
 
 			// Call `func` on each of the specified keys.  The key is provided as
@@ -278,7 +282,8 @@
 				var
 					isList = isArray(keyOrListOrMap),
 					isMap = !isList && isObject(keyOrListOrMap),
-					i, key,
+					i,
+					key,
 					keys = isList ? keyOrListOrMap : isMap ? [] : [keyOrListOrMap],
 					map = isMap ? keyOrListOrMap : {}
 				;
@@ -309,9 +314,14 @@
 			// Get current values for the specified keys.  If `func` is provided,
 			// it will be called with the values as args.
 			get: function (keyOrList, func) {
+				if (arguments.length === 0) {
+					return props;
+				}
 				var result = get(nucleus, keyOrList, func);
-				return func ? result : typeof keyOrList === 'string' ?
-					result.values[0] : result.values;
+				if (!func) {
+					result = typeof keyOrList === 'string' ? result.values[0] : result.values
+				}
+				return result;
 			},
 
 			// Returns true iff all of the specified keys exist (regardless of
@@ -370,8 +380,11 @@
 			// function will automatically be unbound after being called the first
 			// time, so it is guaranteed to be called no more than once.
 			next: function (keyOrList, func) {
-				listeners.unshift(
-					{ keys: toArray(keyOrList), cb: func, calls: 1 });
+				listeners.unshift({
+					keys: toArray(keyOrList),
+					cb: func,
+					calls: 1
+				});
 				return me;
 			},
 
@@ -387,9 +400,10 @@
 				}
 				while (--i >= 0) {
 					listener = listeners[i];
-					if (listener.cb === func &&
-						(!keyOrList || keysMatch(listener.keys, keyOrList)))
-					{
+					if (
+						listener.cb === func &&
+						(!keyOrList || keysMatch(listener.keys, keyOrList))
+					) {
 						listeners.splice(i, 1);
 					}
 				}
@@ -399,8 +413,11 @@
 			// Call `func` whenever any of the specified keys change.  The values
 			// of the keys will be provided as args to func.
 			on: function (keyOrList, func) { // alias: `bind`
-				listeners.unshift({ keys: toArray(keyOrList), cb: func,
-					calls: Infinity });
+				listeners.unshift({
+					keys: toArray(keyOrList),
+					cb: func,
+					calls: Infinity
+				});
 				return me;
 			},
 
@@ -413,11 +430,15 @@
 					results = get(nucleus, keys),
 					values = results.values,
 					missing = results.missing;
-				if (!missing) {
-					func.apply({}, values);
+				if (missing) {
+					listeners.unshift({
+						keys: keys,
+						cb: func,
+						missing: missing,
+						calls: 1
+					});
 				} else {
-					listeners.unshift(
-						{ keys: keys, cb: func, missing: missing, calls: 1 });
+					func.apply({}, values);
 				}
 				return me;
 			},
@@ -450,7 +471,7 @@
 							});
 							return results[key];
 						});
-						Promise.all(Object.values(results)).then(resolve, function() {
+						Promise.all(values(results)).then(resolve, function() {
 							reject(results);
 						});
 					});
@@ -463,15 +484,22 @@
 		me.unbind = me.off;
 
 		if (args.length) {
-			me.set.apply(me, args);
+			var onChange = config.onChange;
+			delete config.onChange;
+			me.set.apply(me, args).then(function() {
+				config.onChange = onChange;
+			});
 		}
 
 		return me;
 	}
 
 	atom.setup = function(config) {
+		// possible options:
+		// - validation
+		// - onChange
 		return atom.bind(config);
-	}
+	};
 
 	atom.VERSION = VERSION;
 
