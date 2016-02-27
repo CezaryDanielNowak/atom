@@ -1,3 +1,7 @@
+atom-js with validation
+========
+
+
 Overview
 ========
 
@@ -31,6 +35,80 @@ To run from command line using node.js:
 To run in a browser, open `test.html`, or go 
 [here](http://zynga.github.io/atom/test.html).
 
+
+Validation
+========
+Validation requires some more setup. You can use any validation library, we recommend
+[next-is library](https://github.com/CezaryDanielNowak/next-is.js)
+
+```js
+var userAtomFactory = atom.setup({
+	validation: {
+		userName: {
+			string: is.isString,
+			maxLen: (input) => is.string.maxLen(input, 20, true)
+		},
+		password: {
+			string: is.isString,
+			minLen: (input) => is.string.minLen(input, 8, false)
+		},
+		creditCard: {
+			iscc: is.string.isCC
+		},
+		email: {
+			string: is.isString,
+			mail: is.string.isEmail,
+			uniq: (input) => {
+				return new Promise((resolve, reject) => {
+					$.post( "/backend/isUniqueEmail", {
+						email: input
+					}).done(() => {
+						resolve();
+					}).fail(() => {
+						reject();
+					});
+				})
+			}
+		}
+	}
+});
+
+var userModel = userAtomFactory();
+
+userModel
+	.set('userName', 'MrSmith')
+	.then(() => {
+		// userName field successfully saved in the model
+	})
+
+userModel
+	.set(userName, 'ThisUserNameIsDefinetelyMuchTooLong')
+	.then(() => {
+		// username is invalid, then callback not triggered.
+	}).catch(function(error) {
+		// error: 'maxLen'
+	});
+
+userModel
+	.set({
+		userName: 'SomeUserName',
+		creditCard: 'not-a-credit-card-number'
+	}).then(() => {}, (error) => {
+		// error:
+		// {
+		//   userName: false, // no error
+		//   creditCard: 'iscc'
+		// }
+	})
+
+
+```
+
+validators should return:
+- boolean (synchronous check)
+- Promise (asynchronous check)
+
+model.set always return Promise.
 
 Tutorial
 ========
@@ -249,7 +327,7 @@ a single expression.
 ```
 
 The `.chain()`, `.each()`, `.entangle()`, `.mixin()`, `.need()`, `.next()`,
-`.off()`, `.on()`, `.once()`, `.provide()` and `.set()` methods are all
+`.off()`, `.on()`, `.once()`, `.provide()` methods are all
 chainable.
 
 
@@ -264,6 +342,13 @@ method.
 
 After being destroyed, most of an atom's functions will throw exceptions when
 called.
+
+
+Polyfills required for old browsers:
+- [Object.keys](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/keys)
+- [Object.values](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/values)
+- [Array.prototype.forEach](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach)
+- [Promise, Promise.all](https://developer.mozilla.org/pl/docs/Web/JavaScript/Reference/Global_Objects/Promise)
 
 
 Additional Resources

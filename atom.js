@@ -81,41 +81,84 @@
 	var objStack = [];
 
 	// Property setter
-	function set(nucleus, key, value) {
-		var keys, listener, listeners = nucleus.listeners, missing,
-			listenersCopy = [].concat(listeners), i = listenersCopy.length,
-			props = nucleus.props, oldValue = props[key],
+	function set(config, nucleus, key, value) {
+		var keys,
+			listener,
+			listeners = nucleus.listeners,
+			missing,
+			listenersCopy = [].concat(listeners),
+			i = listenersCopy.length,
+			props = nucleus.props,
+			oldValue = props[key],
 			had = hasOwn.call(props, key),
 			isObj = isObject(value);
-		props[key] = value;
-		if (!had || oldValue !== value || (isObj && !inArray(objStack, value))) {
-			if (isObj) {
-				objStack.push(value);
-			}
-			while (--i >= 0) {
-				listener = listenersCopy[i];
-				keys = listener.keys;
-				missing = listener.missing;
-				if (missing) {
-					if (hasOwn.call(missing, key)) {
-						delete missing[key];
-						if (isEmpty(missing)) {
-							listener.cb.apply({}, get(nucleus, keys).values);
-							listener.calls--;
+		
+		function performSet() {
+			props[key] = value;
+			if (!had || oldValue !== value || (isObj && !inArray(objStack, value))) {
+				if (isObj) {
+					objStack.push(value);
+				}
+				while (--i >= 0) {
+					listener = listenersCopy[i];
+					keys = listener.keys;
+					missing = listener.missing;
+					if (missing) {
+						if (hasOwn.call(missing, key)) {
+							delete missing[key];
+							if (isEmpty(missing)) {
+								listener.cb.apply({}, get(nucleus, keys).values);
+								listener.calls--;
+							}
 						}
+					} else if (inArray(keys, key)) {
+						listener.cb.apply({}, get(nucleus, keys).values);
+						listener.calls--;
 					}
-				} else if (inArray(keys, key)) {
-					listener.cb.apply({}, get(nucleus, keys).values);
-					listener.calls--;
+					if (!listener.calls) {
+						removeListener(listeners);
+					}
 				}
-				if (!listener.calls) {
-					removeListener(listeners);
+				delete nucleus.needs[key];
+				if (isObj) {
+					objStack.pop();
 				}
 			}
-			delete nucleus.needs[key];
-			if (isObj) {
-				objStack.pop();
+		}
+
+		if (config.validation && config.validation[key]) {
+			var validation = config.validation[key];
+			var promises = {};
+			
+			var validationError = Object.keys(validation).find(function(validationKey) {
+				var validationResult = validation[validationKey](value);
+				if (typeof validationResult === 'boolean') {
+					return !validationResult;
+				} else if (validationResult instanceof Promise) {
+					promises[validationKey] = new Promise(function(resolve, reject) {
+						validationResult.then(resolve, function() {
+							reject(validationKey);
+						});
+					});
+					return false;
+				}
+				
+				throw new Error('ERROR: Wrong data type returned by ' + validationKey + 'validator. Expected Boolean or Promise.');
+			});
+			if (promises.length) {
+				return Promise.all(Object.values(promises)).then(performSet);
+			} else {
+				return new Promise(function(resolve, reject) {
+					if (validationError) {
+						reject(validationError)
+					} else {
+						performSet();
+						resolve();
+					}
+				});
 			}
+		} else {
+			performSet();
 		}
 	}
 
@@ -133,9 +176,9 @@
 
 
 	// Helper function for setting up providers.
-	function provide(nucleus, key, provider) {
+	function provide(config, nucleus, key, provider) {
 		provider(preventMultiCall(function (result) {
-			set(nucleus, key, result);
+			set(config, nucleus, key, result);
 		}));
 	}
 
@@ -310,7 +353,7 @@
 					key = keys[i];
 					provider = providers[key];
 					if (!hasOwn.call(props, key) && provider) {
-						provide(nucleus, key, provider);
+						provide(config, nucleus, key, provider);
 						delete providers[key];
 					} else {
 						needs[key] = true;
@@ -385,7 +428,7 @@
 			// functions will be called at most once.
 			provide: function (key, func) {
 				if (needs[key]) {
-					provide(nucleus, key, func);
+					provide(config, nucleus, key, func);
 				} else if (!providers[key]) {
 					providers[key] = func;
 				}
@@ -396,15 +439,24 @@
 			// keys' corresponding values.
 			set: function (keyOrMap, value) {
 				if (isObject(keyOrMap)) {
-					for (var key in keyOrMap) {
-						if (hasOwn.call(keyOrMap, key)) {
-							set(nucleus, key, keyOrMap[key]);
-						}
-					}
+					return new Promise(function(resolve, reject) {
+						var results = {};
+						Object.keys(keyOrMap).forEach(function(key) {
+							results[key] = set(config, nucleus, key, keyOrMap[key]);
+							results[key].then(function() {
+								results[key] = false;
+							}, function(error) {
+								results[key] = error;
+							});
+							return results[key];
+						});
+						Promise.all(Object.values(results)).then(resolve, function() {
+							reject(results);
+						});
+					});
 				} else {
-					set(nucleus, keyOrMap, value);
+					return set(config, nucleus, keyOrMap, value);
 				}
-				return me;
 			}
 		};
 		me.bind = me.on;
