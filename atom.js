@@ -88,6 +88,8 @@
 
 	// Property setter
 	function set(config, nucleus, key, value) {
+		var validationError = false;
+		var promises = {};
 		function performSet() {
 			var keys,
 				listener,
@@ -138,9 +140,8 @@
 
 		if (config.validation && config.validation[key]) {
 			var validation = config.validation[key];
-			var promises = {};
 			
-			var validationError = Object.keys(validation).find(function(validationKey) {
+			validationError = Object.keys(validation).find(function(validationKey) {
 				var validationResult = validation[validationKey](value);
 				if (typeof validationResult === 'boolean') {
 					return !validationResult;
@@ -155,21 +156,23 @@
 				
 				throw new Error('ERROR: Wrong data type returned by ' + validationKey + 'validator. Expected Boolean or Promise.');
 			});
-			if (promises.length) {
-				return Promise.all(values(promises)).then(performSet);
-			} else {
-				return new Promise(function(resolve, reject) {
-					if (validationError) {
-						reject(validationError);
-					} else {
+
+		}
+
+		return new Promise(function(resolve, reject) {
+			if (validationError) {
+				reject(validationError);
+			} else if (Object.keys(promises).length) {
+				Promise.all(values(promises))
+					.then(function() {
 						performSet();
 						resolve();
-					}
-				});
+					}, reject);
+			} else {
+				performSet();
+				resolve();
 			}
-		} else {
-			performSet();
-		}
+		});
 	}
 
 
