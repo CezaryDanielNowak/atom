@@ -50,8 +50,8 @@
 	var values = Object.values || function(obj) {
 		return Object.keys(obj).map(function(k) {
 			return obj[k];
-		})
-	}
+		});
+	};
 
 
 	// Property getter
@@ -322,7 +322,7 @@
 				}
 				var result = get(nucleus, keyOrList, func);
 				if (!func) {
-					result = typeof keyOrList === 'string' ? result.values[0] : result.values
+					result = typeof keyOrList === 'string' ? result.values[0] : result.values;
 				}
 				return result;
 			},
@@ -487,10 +487,15 @@
 		me.unbind = me.off;
 
 		if (args.length) {
-			var onChange = config.onChange;
+			var _onChange = config.onChange;
 			delete config.onChange;
+			var _validation = config.validation;
+			delete config.validation;
+
 			me.set.apply(me, args).then(function() {
-				config.onChange = onChange;
+				// Don't call onChange and don't trigger validation for initial data.
+				config.onChange = _onChange;
+				config.validation = _validation;
 			});
 		}
 
